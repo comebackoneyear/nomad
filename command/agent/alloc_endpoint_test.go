@@ -10,6 +10,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/hashicorp/nomad/nomad/mock"
 	"github.com/hashicorp/nomad/nomad/structs"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestHTTP_AllocsList(t *testing.T) {
@@ -256,6 +257,24 @@ func TestHTTP_AllocSnapshot(t *testing.T) {
 		if !strings.Contains(err.Error(), allocNotFoundErr) {
 			t.Fatalf("err: %v", err)
 		}
+	})
+}
+
+func TestHTTP_AllocSnapshot_WithMigrateToken(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	httpACLTest(t, nil, func(s *TestAgent) {
+		// TODO add an allocation, assert it is returned
+
+		// Request without a token succeeds
+		req, err := http.NewRequest("GET", "/v1/client/allocation/123/snapshot", nil)
+		assert.Nil(err)
+
+		// Make the unauthorized request
+		respW := httptest.NewRecorder()
+		_, err = s.Server.ClientAllocRequest(respW, req)
+		assert.NotNil(err)
+		assert.Contains(err.Error(), "invalid migrate token")
 	})
 }
 
