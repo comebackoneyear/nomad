@@ -334,8 +334,14 @@ func TestHTTP_AllocGC_WithMigrateTokens(t *testing.T) {
 
 	httpACLTest(t, nil, func(s *TestAgent) {
 
+		// Create an allocation
+		state := s.Agent.server.State()
+		alloc := mock.Alloc()
+		state.UpsertJobSummary(998, mock.JobSummary(alloc.JobID))
+		url := fmt.Sprintf("/v1/client/allocation/%s/snapshot", alloc.ID)
+
 		// Make the request without a valid token
-		req, err := http.NewRequest("GET", "/v1/client/allocation/123/gc", nil)
+		req, err := http.NewRequest("GET", url, nil)
 		assert.Nil(err)
 
 		respW := httptest.NewRecorder()
@@ -343,16 +349,11 @@ func TestHTTP_AllocGC_WithMigrateTokens(t *testing.T) {
 		assert.NotNil(err)
 		assert.Contains(err.Error(), "invalid migrate token")
 
-		// Create an allocation
-		state := s.Agent.server.State()
-		alloc := mock.Alloc()
-		state.UpsertJobSummary(998, mock.JobSummary(alloc.JobID))
-
 		validMigrateToken, err := createMigrateTokenForClientAndAlloc(alloc.ID, s.Agent.Client().Node().SecretID)
 		assert.Nil(err)
 
 		// Make the request with a valid token
-		req, err = http.NewRequest("GET", "/v1/client/allocation/123/gc", nil)
+		req, err = http.NewRequest("GET", url, nil)
 		assert.Nil(err)
 
 		req.Header.Set("X-Nomad-Token", validMigrateToken)
