@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -261,6 +262,13 @@ func TestHTTP_AllocSnapshot(t *testing.T) {
 	})
 }
 
+func createMigrateTokenForClientAndAlloc(allocID, clientSecret string) (string, error) {
+	h, err := blake2b.New512([]byte(clientSecret))
+	h.Write([]byte(allocID))
+	validMigrateToken, err := string(h.Sum(nil)), nil
+	return validMigrateToken, err
+}
+
 func TestHTTP_AllocSnapshot_WithMigrateToken(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -280,22 +288,20 @@ func TestHTTP_AllocSnapshot_WithMigrateToken(t *testing.T) {
 		alloc := mock.Alloc()
 		state.UpsertJobSummary(998, mock.JobSummary(alloc.JobID))
 
-		// Set up data to create an authenticated request
-		h, err := blake2b.New512([]byte(s.Agent.Client().Node().SecretID))
-		h.Write([]byte(alloc.ID))
-		validMigrateToken, err := string(h.Sum(nil)), nil
+		validMigrateToken, err := createMigrateTokenForClientAndAlloc(alloc.ID, s.Agent.Client().Node().SecretID)
 		assert.Nil(err)
 
 		// Request with a token succeeds
-		req.Header.Set("X-Nomad-Token", validMigrateToken)
-		req, err = http.NewRequest("GET", "/v1/client/allocation/123/snapshot", nil)
+		url := fmt.Sprintf("/v1/client/allocation/%s/snapshot", alloc.ID)
+		req, err = http.NewRequest("GET", url, nil)
 		assert.Nil(err)
+
+		req.Header.Set("X-Nomad-Token", validMigrateToken)
 
 		// Make the unauthorized request
 		respW = httptest.NewRecorder()
 		_, err = s.Server.ClientAllocRequest(respW, req)
-		assert.NotNil(err)
-		assert.Contains(err.Error(), "invalid migrate token")
+		assert.NotContains(err.Error(), "invalid migrate token")
 	})
 }
 
@@ -314,6 +320,41 @@ func TestHTTP_AllocGC(t *testing.T) {
 		if !strings.Contains(err.Error(), "unable to collect allocation") {
 			t.Fatalf("err: %v", err)
 		}
+	})
+}
+
+func TestHTTP_AllocGC_WithMigrateTokens(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	httpACLTest(t, nil, func(s *TestAgent) {
+
+		// Make the request without a valid token
+		req, err := http.NewRequest("GET", "/v1/client/allocation/123/gc", nil)
+		assert.Nil(err)
+
+		respW := httptest.NewRecorder()
+		_, err = s.Server.ClientAllocRequest(respW, req)
+		assert.NotNil(err)
+		assert.Contains(err.Error(), "invalid migrate token")
+
+		// Create an allocation
+		state := s.Agent.server.State()
+		alloc := mock.Alloc()
+		state.UpsertJobSummary(998, mock.JobSummary(alloc.JobID))
+
+		validMigrateToken, err := createMigrateTokenForClientAndAlloc(alloc.ID, s.Agent.Client().Node().SecretID)
+		assert.Nil(err)
+
+		// Make the request with a valid token
+		req, err = http.NewRequest("GET", "/v1/client/allocation/123/gc", nil)
+		assert.Nil(err)
+
+		req.Header.Set("X-Nomad-Token", validMigrateToken)
+
+		respW = httptest.NewRecorder()
+		_, err = s.Server.ClientAllocRequest(respW, req)
+		assert.NotContains(err.Error(), "invalid migrate token")
 	})
 }
 
