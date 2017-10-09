@@ -107,12 +107,6 @@ func (s *HTTPServer) ClientGCRequest(resp http.ResponseWriter, req *http.Request
 }
 
 func (s *HTTPServer) allocGC(allocID string, resp http.ResponseWriter, req *http.Request) (interface{}, error) {
-	var secret string
-	s.parseToken(req, &secret)
-	if !s.agent.Client().ValidateMigrateToken(allocID, secret) {
-		return nil, fmt.Errorf("invalid migrate token for allocation %q", allocID)
-	}
-
 	return nil, s.agent.Client().CollectAllocation(allocID)
 }
 
